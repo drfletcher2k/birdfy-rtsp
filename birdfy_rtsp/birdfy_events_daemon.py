@@ -167,6 +167,18 @@ async def fetch_clip(token: str, userid: str, device_id: str, ev: dict) -> str:
     return f"/local/birdfy_clips/{name}"
 
 
+async def clip_duration(path: str) -> float:
+    """Durée du clip en secondes (ffprobe) ; 20 s si illisible, la durée habituelle."""
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+    out, _ = await proc.communicate()
+    try:
+        return float(out.decode().strip())
+    except ValueError:
+        return 20.0
+
+
 def best_frame(desc: dict):
     """(timestamp, espèce, centre "x% y%") de l'image IA où l'oiseau est le plus grand."""
     best = None
@@ -336,9 +348,11 @@ async def poll_once(token: str, userid: str, device_id: str, output_file: str,
             continue
         del _pending_clips[alarm_id]
         species = visit_species(json.loads(ev.get("description") or "{}"))
-        log.info(f"Clip prêt {clip} ({', '.join(species) or 'espèce inconnue'})")
+        duration = await clip_duration(os.path.join(CLIPS_DIR, os.path.basename(clip)))
+        log.info(f"Clip prêt {clip} {duration:.0f}s ({', '.join(species) or 'espèce inconnue'})")
         await fire_ha_event("birdfy_motion", {"alarm_id": alarm_id, "alert_time": alert_time,
-                                              "clip": clip, "species": species})
+                                              "clip": clip, "species": species,
+                                              "duration": duration})
 
     await refresh_photos(token, userid, device_id, events_raw)
     if last:
