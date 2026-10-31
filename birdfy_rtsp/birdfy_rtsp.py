@@ -41,7 +41,6 @@ def start_ffmpeg(rtsp_url: str) -> subprocess.Popen:
         "ffmpeg", "-y",
         "-loglevel", "warning",
         # Input: raw H264 Annex-B bitstream from stdin
-        "-use_wallclock_as_timestamps", "1",
         "-f", "h264",
         "-i", "pipe:0",
         # Re-encode to fix timestamps and smooth output
