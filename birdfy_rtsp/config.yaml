@@ -1,5 +1,5 @@
 name: Birdfy RTSP Proxy
-version: "1.0.7"
+version: "1.0.8"
 slug: birdfy_rtsp
 description: Birdfy camera WebRTC to RTSP proxy via MediaMTX
 arch:
