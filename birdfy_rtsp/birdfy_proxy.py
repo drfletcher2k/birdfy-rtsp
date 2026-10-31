@@ -153,7 +153,7 @@ class BirdfyClient:
             "timeStamp":    int(time.time() * 1000),
             "action":       "startLive",
             "size":         "1920x1080",
-            "resolution":   "1280x720",  # canal Sub (voir autoBitrate) ; "auto" donnait 1080p
+            "resolution":   "auto",
             "mode":         MODE,
             "viewerType":   VIEWER_TYPE,
         })
