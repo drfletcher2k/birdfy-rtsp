@@ -25,10 +25,13 @@ HA_EVENTS_URL = "http://supervisor/core/api/events"
 DOWNLOAD_LINK_URL = "https://centralapi.nvts.co/event/downloadLink"
 CLIPS_DIR  = "/config/www/birdfy_clips"   # servi par HA sous /local/birdfy_clips
 KEEP_CLIPS = 3
+PHOTOS_DIR = "/config/www/birdfy_visits"  # une photo IA par visite, /local/birdfy_visits
+KEEP_PHOTOS = 5
 
 _last_alarm_id = None  # None = premier poll, sert de référence sans déclencher
 _last_image_url = ""
 _pending_clips = {}    # alarm_id -> alert_time : clips à télécharger dès qu'ils sont prêts
+_photos_sent = None    # dernière liste envoyée à HA (birdfy_recent_birds)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -164,6 +167,80 @@ async def fetch_clip(token: str, userid: str, device_id: str, ev: dict) -> str:
     return f"/local/birdfy_clips/{name}"
 
 
+def best_frame(desc: dict):
+    """(timestamp, espèce, centre "x% y%") de l'image IA où l'oiseau est le plus grand."""
+    best = None
+    for ts, frame in (desc.get("aiLabels") or {}).items():
+        for label in frame:
+            for obj in label.get("objects", []):
+                area = obj.get("width", 0) * obj.get("height", 0)
+                if best is None or area > best[0]:
+                    focus = (f"{round((obj.get('left', 0) + obj.get('width', 0) / 2) * 100)}% "
+                             f"{round((obj.get('top', 0) + obj.get('height', 0) / 2) * 100)}%")
+                    best = (area, ts, obj.get("desc") or label.get("name", ""), focus)
+    return best[1:] if best else (None, "", "")
+
+
+async def fetch_photo(token: str, userid: str, device_id: str, ev: dict, frame_ts: str) -> bool:
+    """Télécharge l'image IA frame_ts de l'événement dans PHOTOS_DIR."""
+    desc = json.loads(ev.get("description") or "{}")
+    body = {"eventList": [{
+        "serialnumber": device_id, "alarmId": ev["alarmId"], "dataGroup": ["pic"],
+        "recordDir": desc.get("recordDir", ""), "recordUrl": desc.get("recordUrl", ""),
+        "pic": ev.get("pic", ""), "aiRecordDir": desc.get("aiRecordDir", ""),
+    }]}
+    async with aiohttp.ClientSession() as s:
+        async with s.post(DOWNLOAD_LINK_URL, json=body, headers=auth_headers(token, userid)) as r:
+            data = await r.json(content_type=None)
+        pics = ((data.get("eventList") or [{}])[0].get("picList") or [])
+        url = next((p for p in pics if f"_{frame_ts}_" in p), pics[0] if pics else "")
+        if not url:
+            return False
+        async with s.get(url) as r:
+            if r.status != 200:
+                return False
+            photo = await r.read()
+    os.makedirs(PHOTOS_DIR, exist_ok=True)
+    path = os.path.join(PHOTOS_DIR, f"{ev['alarmId']}.jpg")
+    with open(path + ".tmp", "wb") as f:
+        f.write(photo)
+    os.replace(path + ".tmp", path)
+    return True
+
+
+async def refresh_photos(token: str, userid: str, device_id: str, events_raw: list) -> None:
+    """Garde une photo des KEEP_PHOTOS dernières visites d'oiseaux et publie la liste à HA."""
+    global _photos_sent
+    birds = []
+    for ev in events_raw:
+        if len(birds) == KEEP_PHOTOS:
+            break
+        if not ev.get("isReady"):
+            continue
+        frame_ts, species, focus = best_frame(json.loads(ev.get("description") or "{}"))
+        if frame_ts is None:  # mouvement sans oiseau reconnu
+            continue
+        name = f"{ev['alarmId']}.jpg"
+        if not os.path.exists(os.path.join(PHOTOS_DIR, name)):
+            try:
+                if not await fetch_photo(token, userid, device_id, ev, frame_ts):
+                    continue
+            except Exception as e:
+                log.warning(f"Photo {ev['alarmId']} échouée: {e}")
+                continue
+        birds.append({"key": ev["alarmId"], "file": name, "species": species, "focus": focus,
+                      "time": ev.get("alertTime", 0), "category": "visit"})
+    if not birds:
+        return
+    keep = {b["file"] for b in birds}
+    for f in os.listdir(PHOTOS_DIR):
+        if f.endswith(".jpg") and f not in keep:
+            os.remove(os.path.join(PHOTOS_DIR, f))
+    if birds != _photos_sent:
+        await fire_ha_event("birdfy_recent_birds", {"birds": birds})
+        _photos_sent = birds
+
+
 def parse_event(ev: dict) -> dict:
     alarm_id   = ev.get("alarmId", "")
     alert_time = ev.get("alertTime", 0)
@@ -262,6 +339,8 @@ async def poll_once(token: str, userid: str, device_id: str, output_file: str,
         log.info(f"Clip prêt {clip} ({', '.join(species) or 'espèce inconnue'})")
         await fire_ha_event("birdfy_motion", {"alarm_id": alarm_id, "alert_time": alert_time,
                                               "clip": clip, "species": species})
+
+    await refresh_photos(token, userid, device_id, events_raw)
     if last:
         last["image_url"] = _last_image_url
 
