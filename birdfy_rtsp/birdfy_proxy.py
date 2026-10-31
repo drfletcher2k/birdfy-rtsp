@@ -151,7 +151,7 @@ class BirdfyClient:
             "connectionId": self.connection_id,
             "timeStamp":    int(time.time() * 1000),
             "action":       "startLive",
-            "size":         "1920x1080",
+            "size":         "1280x720",
             "resolution":   "auto",
             "mode":         MODE,
             "viewerType":   VIEWER_TYPE,
