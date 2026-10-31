@@ -1,5 +1,5 @@
 name: Birdfy RTSP Proxy
-version: "1.0.12"
+version: "1.0.13"
 slug: birdfy_rtsp
 description: Birdfy camera WebRTC to RTSP proxy via MediaMTX
 arch:
@@ -22,5 +22,6 @@ ports:
 ports_description:
   8556/tcp: RTSP stream
 host_network: true
+homeassistant_api: true
 map:
   - config:rw

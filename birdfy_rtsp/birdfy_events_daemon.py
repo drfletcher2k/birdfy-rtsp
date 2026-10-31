@@ -20,6 +20,11 @@ LOGIN_URL = "https://localweb.nvts.co/v1/users/login/v2"
 
 POLL_INTERVAL = 300  # seconds
 MAX_EVENTS    = 10
+MOTION_MAX_AGE_MS = 5 * 60 * 1000  # ignorer les événements plus vieux (rattrapage)
+HA_EVENTS_URL = "http://supervisor/core/api/events"
+
+_last_alarm_id = None  # None = premier poll, sert de référence sans déclencher
+_last_image_url = ""
 
 logging.basicConfig(
     level=logging.INFO,
@@ -98,6 +103,21 @@ async def get_image_url(token: str, userid: str, alarm_id: str, device_id: str) 
             return ""
 
 
+async def fire_ha_event(event_type: str, data: dict) -> None:
+    """Déclenche un événement Home Assistant via l'API Supervisor (homeassistant_api)."""
+    token = os.environ.get("SUPERVISOR_TOKEN", "")
+    if not token:
+        log.warning(f"SUPERVISOR_TOKEN absent — événement {event_type} non envoyé")
+        return
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.post(f"{HA_EVENTS_URL}/{event_type}", json=data,
+                              headers={"Authorization": f"Bearer {token}"}) as r:
+                log.info(f"Événement HA {event_type} → {r.status}")
+    except Exception as e:
+        log.warning(f"Événement HA {event_type} échoué: {e}")
+
+
 def parse_event(ev: dict) -> dict:
     alarm_id   = ev.get("alarmId", "")
     alert_time = ev.get("alertTime", 0)
@@ -164,14 +184,18 @@ async def poll_once(token: str, userid: str, device_id: str, output_file: str,
         events_raw = await get_events(token, userid, device_id)
 
     events = [parse_event(e) for e in events_raw]
-
-    # Fetch image URL for most recent event only (to avoid spamming the API)
-    if events and not events[0]["record_url"]:
-        events[0]["image_url"] = await get_image_url(token, userid, events[0]["alarm_id"], device_id)
-    elif events:
-        events[0]["image_url"] = await get_image_url(token, userid, events[0]["alarm_id"], device_id)
-
     last = events[0] if events else {}
+
+    # Nouvel événement : image (une seule fois par alarme) + événement HA birdfy_motion
+    global _last_alarm_id, _last_image_url
+    if last and last["alarm_id"] != _last_alarm_id:
+        _last_image_url = await get_image_url(token, userid, last["alarm_id"], device_id)
+        if _last_alarm_id is not None and time.time() * 1000 - last["alert_time"] < MOTION_MAX_AGE_MS:
+            await fire_ha_event("birdfy_motion", {"alarm_id": last["alarm_id"], "alert_time": last["alert_time"]})
+        _last_alarm_id = last["alarm_id"]
+    if last:
+        last["image_url"] = _last_image_url
+
     output = {
         "last_updated":     int(time.time()),
         "last_event":       last,

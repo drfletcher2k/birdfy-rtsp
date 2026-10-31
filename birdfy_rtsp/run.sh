@@ -64,7 +64,7 @@ python3 /app/birdfy_events_daemon.py \
     --output /config/birdfy_events.json \
     --email "$EMAIL" \
     --password "$PASSWORD" \
-    --interval 300 &
+    --interval 20 &
 
 echo "[birdfy] Starting MediaMTX on port ${RTSP_PORT} (on-demand mode)..."
 exec mediamtx /tmp/mediamtx.yml
