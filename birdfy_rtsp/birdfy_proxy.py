@@ -89,9 +89,13 @@ class BirdfyClient:
         self._ice_servers   = ice_servers or []
         self.on_rtp_packet  = on_rtp_packet  # callback(data: bytes, addr) pour chaque paquet RTP vidéo
         self._ping_interval = ping_interval
+        # IDs de la caméra/viewer tirés du ticket (wss://host/{group}/viewer/{viewer}?...)
+        ids = re.search(r"/([^/?]+)/viewer/([^/?]+)", full_url)
+        self.group_id       = ids.group(1) if ids else GROUP_ID
+        self.viewer_id      = ids.group(2) if ids else VIEWER_ID
         self.pc: Optional[RTCPeerConnection] = None
         self.dc             = None
-        self.session_id     = f"web-{VIEWER_ID}-{int(time.time()*1000)}"
+        self.session_id     = f"web-{self.viewer_id}-{int(time.time()*1000)}"
         self.connection_id  = uuid.uuid4().hex
         self._video_track   = None
         self._audio_track   = None
@@ -364,8 +368,8 @@ class BirdfyClient:
     async def _send_sdp_offer(self, ws):
         sdp_msg = {
             "messageType":       "SDP_OFFER",
-            "recipientClientId": GROUP_ID,
-            "senderClientId":    VIEWER_ID,
+            "recipientClientId": self.group_id,
+            "senderClientId":    self.viewer_id,
             "messagePayload":    self._b64enc({"sdp": self._offer_sdp, "type": "offer"}),
             "sessionId":         self.session_id,
             "resolution":        "auto",
@@ -600,8 +604,8 @@ class BirdfyClient:
                 }
                 ice_msg = {
                     "messageType":       "ICE_CANDIDATE",
-                    "recipientClientId": GROUP_ID,
-                    "senderClientId":    VIEWER_ID,
+                    "recipientClientId": self.group_id,
+                    "senderClientId":    self.viewer_id,
                     "sessionId":         self.session_id,
                     "messagePayload":    self._b64enc(payload),
                     "mode":              MODE,
@@ -616,8 +620,8 @@ class BirdfyClient:
         for mid_v, idx_v in [("0", 0), ("1", 1), ("2", 2)]:
             eoc_msg = {
                 "messageType":       "ICE_CANDIDATE",
-                "recipientClientId": GROUP_ID,
-                "senderClientId":    VIEWER_ID,
+                "recipientClientId": self.group_id,
+                "senderClientId":    self.viewer_id,
                 "sessionId":         self.session_id,
                 "messagePayload":    self._b64enc({
                     "candidate":        "",
