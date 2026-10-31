@@ -39,6 +39,7 @@ paths:
   birdfy:
     runOnDemand: env BIRDFY_EMAIL=${EMAIL} BIRDFY_PASSWORD=${PASSWORD} python3 /app/birdfy_rtsp.py --session $SESSION --rtsp-url rtsp://localhost:${RTSP_PORT}/birdfy
     runOnDemandStartTimeout: 90s
+    runOnRead: pkill -USR1 -f /app/birdfy_rtsp.py
     runOnDemandCloseAfter: 30s
 EOF
 

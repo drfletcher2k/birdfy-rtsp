@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -41,6 +42,7 @@ def start_ffmpeg(rtsp_url: str) -> subprocess.Popen:
         "ffmpeg", "-y",
         "-loglevel", "warning",
         # Input: raw H264 Annex-B bitstream from stdin
+        "-use_wallclock_as_timestamps", "1",
         "-f", "h264",
         "-i", "pipe:0",
         # Re-encode to fix timestamps and smooth output
@@ -205,6 +207,11 @@ async def one_session(session_file: str, rtsp_url: str, no_turn: bool) -> bool:
 
     client = BirdfyClient(full_url=full_url, ice_servers=ice_servers, on_rtp_packet=on_rtp_packet,
                           ping_interval=ping_interval)
+    # MediaMTX (runOnRead) envoie SIGUSR1 à chaque nouveau lecteur RTSP : on demande
+    # alors une keyframe pour qu'il puisse décoder tout de suite. Des PLI périodiques
+    # feraient chuter le débit d'images (IDR 1080p sous le plafond de débit de la caméra).
+    asyncio.get_running_loop().add_signal_handler(
+        signal.SIGUSR1, lambda: asyncio.ensure_future(client._send_rtcp_pli()))
     connect_task = asyncio.create_task(client.connect())
 
     try:

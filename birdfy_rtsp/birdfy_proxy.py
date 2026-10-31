@@ -159,7 +159,7 @@ class BirdfyClient:
         self.dc.send(msg)
         log.info(f"startLive → {msg[:80]}")
         # Lancer la boucle PLI en arrière-plan (demande IDR keyframe)
-        asyncio.create_task(self._pli_loop(count=8, interval=1.5))
+        asyncio.create_task(self._pli_loop(count=2, interval=1.0))
 
     # ── Connexion principale ─────────────────────────────────────────────────
     async def connect(self, on_track_cb=None):
@@ -486,16 +486,11 @@ class BirdfyClient:
         except Exception as e:
             log.warning(f"RTCP PLI échoué: {e}")
 
-    async def _pli_loop(self, count: int = 5, interval: float = 1.5, keep_interval: float = 2.0):
+    async def _pli_loop(self, count: int = 5, interval: float = 1.5):
         """Envoie plusieurs PLI à intervalles pour s'assurer de recevoir un IDR."""
         for i in range(count):
             await asyncio.sleep(interval)
             log.info(f"PLI #{i+1}/{count}")
-            await self._send_rtcp_pli()
-        # La caméra n'envoie pas d'IDR d'elle-même : sans PLI régulier, un lecteur RTSP
-        # qui arrive en cours de flux (ex. Home Assistant) n'a jamais de keyframe.
-        while self.pc and self.pc.connectionState not in ("failed", "closed"):
-            await asyncio.sleep(keep_interval)
             await self._send_rtcp_pli()
 
     # ── Debug + fix H264 decoder ─────────────────────────────────────────────
