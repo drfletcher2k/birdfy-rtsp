@@ -358,8 +358,9 @@ class BirdfyClient:
             close_timeout=5,
             max_size=10_000_000,
         ) as ws:
-            log.info("✅ WebSocket connecté — envoi SDP offer immédiat")
-            await self._send_sdp_offer(ws)
+            # Une seule offre, envoyée sur PEER_IN : deux offres font répondre la caméra
+            # avec deux sessions, et seule la seconde reste active de son côté.
+            log.info("✅ WebSocket connecté — attente PEER_IN pour envoyer le SDP offer")
 
             # Boucle messages
             async for raw in ws:
@@ -390,7 +391,7 @@ class BirdfyClient:
         mtype = msg.get("messageType", "")
 
         if mtype == "PEER_IN":
-            log.info("PEER_IN reçu — envoi SDP offer (retransmission)")
+            log.info("PEER_IN reçu — envoi SDP offer")
             await self._send_sdp_offer(ws)
 
         elif mtype == "SDP_ANSWER":
