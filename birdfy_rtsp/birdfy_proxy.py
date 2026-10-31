@@ -137,7 +137,8 @@ class BirdfyClient:
                 d = json.loads(msg)
                 act = d.get("action", "?")
                 rv  = d.get("returnValue", "")
-                log.info(f"  DC ← {act}  rv={rv}  msg={str(d)[:200]}")
+                # autoBitrate liste les résolutions/débits acceptés : on le garde entier
+                log.info(f"  DC ← {act}  rv={rv}  msg={str(d) if act == 'autoBitrate' else str(d)[:200]}")
                 if act == "startLive" and rv in (0, 17):
                     log.info("🎥 Stream actif !")
             except Exception:
@@ -151,7 +152,7 @@ class BirdfyClient:
             "connectionId": self.connection_id,
             "timeStamp":    int(time.time() * 1000),
             "action":       "startLive",
-            "size":         "1280x720",
+            "size":         "1920x1080",
             "resolution":   "auto",
             "mode":         MODE,
             "viewerType":   VIEWER_TYPE,
